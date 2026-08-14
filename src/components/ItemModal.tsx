@@ -7,9 +7,19 @@ import {
   saveItemBundle,
   toggleSubItemComplete,
 } from "@/lib/actions/items";
+import {
+  listTemplates,
+  saveTemplate,
+} from "@/lib/actions/features";
+import { markHasSaved } from "@/components/InstallHint";
 import { compressImage } from "@/lib/images";
 import { recurrenceLabel } from "@/lib/recurrence";
-import type { DayItem, Priority, RecurrenceConfig } from "@/lib/types";
+import type {
+  ActivityTemplate,
+  DayItem,
+  Priority,
+  RecurrenceConfig,
+} from "@/lib/types";
 import { cn, formatTime } from "@/lib/utils";
 import { RecurrenceEditor } from "./RecurrenceEditor";
 import {
@@ -32,17 +42,6 @@ type DraftLink = {
   label: string;
 };
 
-type DraftSubItem = {
-  key: string;
-  id?: string;
-  title: string;
-  description: string;
-  priority: Priority;
-  isCompleted: boolean;
-  links: DraftLink[];
-  open: boolean;
-};
-
 type DraftImage = {
   key: string;
   id?: string;
@@ -51,6 +50,18 @@ type DraftImage = {
   fileName?: string;
   file?: File;
   previewUrl?: string;
+};
+
+type DraftSubItem = {
+  key: string;
+  id?: string;
+  title: string;
+  description: string;
+  priority: Priority;
+  isCompleted: boolean;
+  links: DraftLink[];
+  images: DraftImage[];
+  open: boolean;
 };
 
 type Mode = "view" | "edit";
@@ -79,6 +90,44 @@ function toLocalInput(iso: string | null): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function toDraftSub(s: {
+  subItemId: string;
+  title: string;
+  description: string | null;
+  priority: Priority;
+  isCompleted: boolean;
+  links: { id: string; url: string; label: string | null }[];
+  images: {
+    id: string;
+    url?: string;
+    storage_path: string;
+    file_name: string | null;
+  }[];
+}): DraftSubItem {
+  return {
+    key: s.subItemId,
+    id: s.subItemId,
+    title: s.title,
+    description: s.description ?? "",
+    priority: s.priority,
+    isCompleted: s.isCompleted,
+    links: s.links.map((l) => ({
+      key: l.id,
+      id: l.id,
+      url: l.url,
+      label: l.label ?? "",
+    })),
+    images: s.images.map((img) => ({
+      key: img.id,
+      id: img.id,
+      url: img.url,
+      storagePath: img.storage_path,
+      fileName: img.file_name ?? undefined,
+    })),
+    open: false,
+  };
 }
 
 function Field({
@@ -155,23 +204,7 @@ export function ItemModal({
       })) ?? []
   );
   const [subItems, setSubItems] = useState<DraftSubItem[]>(
-    () =>
-      item?.subItems.map((s) => ({
-        key: s.subItemId,
-        id: s.subItemId,
-        title: s.title,
-        description: s.description ?? "",
-        priority: s.priority,
-        isCompleted: s.isCompleted,
-        links:
-          s.links?.map((l) => ({
-            key: l.id,
-            id: l.id,
-            url: l.url,
-            label: l.label ?? "",
-          })) ?? [],
-        open: false,
-      })) ?? []
+    () => item?.subItems.map(toDraftSub) ?? []
   );
   const [images, setImages] = useState<DraftImage[]>(
     () =>
@@ -192,6 +225,7 @@ export function ItemModal({
     { id: string; storagePath: string }[]
   >([]);
   const [expandedSubs, setExpandedSubs] = useState<Record<string, boolean>>({});
+  const [templates, setTemplates] = useState<ActivityTemplate[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [visible, setVisible] = useState(false);
@@ -201,6 +235,12 @@ export function ItemModal({
   useEffect(() => {
     const t = requestAnimationFrame(() => setVisible(true));
     return () => cancelAnimationFrame(t);
+  }, []);
+
+  useEffect(() => {
+    void listTemplates()
+      .then(setTemplates)
+      .catch(() => setTemplates([]));
   }, []);
 
   useEffect(() => {
@@ -239,24 +279,7 @@ export function ItemModal({
         label: l.label ?? "",
       }))
     );
-    setSubItems(
-      item.subItems.map((s) => ({
-        key: s.subItemId,
-        id: s.subItemId,
-        title: s.title,
-        description: s.description ?? "",
-        priority: s.priority,
-        isCompleted: s.isCompleted,
-        links:
-          s.links?.map((l) => ({
-            key: l.id,
-            id: l.id,
-            url: l.url,
-            label: l.label ?? "",
-          })) ?? [],
-        open: false,
-      }))
-    );
+    setSubItems(item.subItems.map(toDraftSub));
     setImages(
       item.images.map((img) => ({
         key: img.id,
@@ -311,6 +334,7 @@ export function ItemModal({
         priority: "optional",
         isCompleted: false,
         links: [],
+        images: [],
         open: true,
       },
     ]);
@@ -407,6 +431,89 @@ export function ItemModal({
     }
   }
 
+  async function handleSubImagePick(subKey: string, files: FileList | null) {
+    if (!files?.length) return;
+    try {
+      const next: DraftImage[] = [];
+      for (const file of Array.from(files)) {
+        const compressed = await compressImage(file);
+        next.push({
+          key: nextKey("simg"),
+          file: compressed,
+          previewUrl: URL.createObjectURL(compressed),
+          fileName: compressed.name,
+        });
+      }
+      setSubItems((prev) =>
+        prev.map((s) =>
+          s.key === subKey ? { ...s, images: [...s.images, ...next] } : s
+        )
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Image upload failed");
+    }
+  }
+
+  function applyTemplate(t: ActivityTemplate) {
+    setTitle(t.title || t.name);
+    setDescription(t.description ?? "");
+    setPriority(t.priority);
+    setLinks(
+      (t.body.links ?? []).map((l) => ({
+        key: nextKey("tlink"),
+        url: l.url,
+        label: l.label ?? "",
+      }))
+    );
+    setSubItems(
+      (t.body.subItems ?? []).map((s) => ({
+        key: nextKey("tsub"),
+        title: s.title,
+        description: s.description ?? "",
+        priority: s.priority,
+        isCompleted: false,
+        links: (s.links ?? []).map((l) => ({
+          key: nextKey("tsl"),
+          url: l.url,
+          label: l.label ?? "",
+        })),
+        images: [],
+        open: false,
+      }))
+    );
+  }
+
+  function handleSaveTemplate() {
+    const name = window.prompt("Template name", title || "Template");
+    if (!name) return;
+    startTransition(async () => {
+      await saveTemplate({
+        name,
+        title,
+        description,
+        priority,
+        body: {
+          links: links
+            .filter((l) => l.url.trim())
+            .map((l) => ({ url: l.url, label: l.label })),
+          subItems: subItems
+            .filter((s) => s.title.trim())
+            .map((s) => ({
+              title: s.title,
+              description: s.description,
+              priority: s.priority,
+              kind: "step" as const,
+              links: s.links
+                .filter((l) => l.url.trim())
+                .map((l) => ({ url: l.url, label: l.label })),
+            })),
+        },
+      });
+      const next = await listTemplates();
+      setTemplates(next);
+    });
+  }
+
   function save() {
     if (!title.trim()) {
       setError("Give this activity a title.");
@@ -480,6 +587,32 @@ export function ItemModal({
           }
         }
 
+        const titledSubs = subItems.filter((s) => s.title.trim());
+        for (const [index, sub] of titledSubs.entries()) {
+          const subId = result.subItemIds?.[index];
+          const pendingSubFiles = sub.images.filter((i) => i.file);
+          if (!subId || !pendingSubFiles.length) continue;
+          const supabase = createClient();
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (!user) continue;
+          for (const img of pendingSubFiles) {
+            const path = `${user.id}/${result.itemId}/${subId}/${Date.now()}-${img.fileName}`;
+            const { error: uploadError } = await supabase.storage
+              .from("item-images")
+              .upload(path, img.file!);
+            if (uploadError) throw uploadError;
+            await registerImage({
+              storagePath: path,
+              fileName: img.fileName ?? "image.webp",
+              fileSize: img.file!.size,
+              subItemId: subId,
+            });
+          }
+        }
+
+        markHasSaved();
         setVisible(false);
         setTimeout(onSaved, 160);
       } catch (err) {
@@ -702,7 +835,9 @@ export function ItemModal({
                                 </p>
                                 <PriorityBadge priority={sub.priority} />
                               </div>
-                              {(sub.description || sub.links.length > 0) && (
+                              {(sub.description ||
+                                sub.links.length > 0 ||
+                                sub.images.length > 0) && (
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -751,6 +886,21 @@ export function ItemModal({
                                     </li>
                                   ))}
                                 </ul>
+                              )}
+                              {sub.images.length > 0 && (
+                                <div className="grid grid-cols-3 gap-2">
+                                  {sub.images.map((img) =>
+                                    img.previewUrl || img.url ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        key={img.key}
+                                        src={img.previewUrl || img.url}
+                                        alt=""
+                                        className="aspect-square rounded-lg object-cover"
+                                      />
+                                    ) : null
+                                  )}
+                                </div>
                               )}
                             </div>
                           )}
@@ -850,6 +1000,34 @@ export function ItemModal({
                   className="field-input resize-y"
                 />
               </Field>
+
+              {isNew && templates.length > 0 && (
+                <Field label="Use a template">
+                  <select
+                    className="field-input"
+                    defaultValue=""
+                    onChange={(e) => {
+                      const t = templates.find((x) => x.id === e.target.value);
+                      if (t) applyTemplate(t);
+                    }}
+                  >
+                    <option value="">Choose…</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              <button
+                type="button"
+                onClick={handleSaveTemplate}
+                disabled={pending || !title.trim()}
+                className="text-sm text-[var(--muted)] underline-offset-2 hover:text-[var(--text)] hover:underline disabled:opacity-40"
+              >
+                Save as template
+              </button>
 
               <section className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -1050,7 +1228,7 @@ export function ItemModal({
                             placeholder="Sub-item description…"
                             className="field-input resize-y"
                           />
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             {(["important", "optional"] as Priority[]).map(
                               (p) => (
                                 <button
@@ -1071,6 +1249,44 @@ export function ItemModal({
                                   {p}
                                 </button>
                               )
+                            )}
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-[var(--optional)]">
+                                Images
+                              </span>
+                              <label className="text-xs text-[var(--accent)] hover:underline">
+                                + Add image
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    void handleSubImagePick(
+                                      sub.key,
+                                      e.target.files
+                                    );
+                                    e.target.value = "";
+                                  }}
+                                />
+                              </label>
+                            </div>
+                            {sub.images.length > 0 && (
+                              <div className="grid grid-cols-3 gap-2">
+                                {sub.images.map((img) => (
+                                  <div key={img.key} className="relative">
+                                    {(img.previewUrl || img.url) && (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        src={img.previewUrl || img.url}
+                                        alt=""
+                                        className="aspect-square rounded-lg object-cover"
+                                      />
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
                             )}
                           </div>
                           <div className="space-y-2">

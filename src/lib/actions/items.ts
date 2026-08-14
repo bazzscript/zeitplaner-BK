@@ -23,6 +23,7 @@ import type {
   SubItem,
 } from "@/lib/types";
 import { buildRRule } from "@/lib/recurrence";
+import { withZbkLink } from "@/lib/zbk-link";
 import { formatDateKey, parseDateKey } from "@/lib/utils";
 
 async function requireUser() {
@@ -226,6 +227,7 @@ async function buildDayItem(
         description: state?.description ?? sub.description,
         priority: state?.priority ?? sub.priority,
         isCompleted: state?.is_completed ?? sub.is_completed,
+        kind: sub.kind ?? "step",
         links: sub.links ?? [],
         images: attachSignedUrls(subImages, subSigned),
         hasInstanceOverride: Boolean(state),
@@ -326,6 +328,7 @@ export type ItemBundleSubItem = {
   title: string;
   description?: string | null;
   priority: Priority;
+  kind?: "step" | "note";
   isCompleted?: boolean;
   links: ItemBundleLink[];
   deletedLinkIds?: string[];
@@ -399,7 +402,11 @@ export async function saveItemBundle(payload: ItemBundlePayload) {
         tokens.refreshToken,
         {
           title: payload.title || "New activity",
-          description: payload.description,
+          description: withZbkLink(
+            payload.description,
+            payload.dateKey!,
+            data.id
+          ),
           startTime: start.toISOString(),
           endTime: end.toISOString(),
           recurrence: payload.recurrence,
@@ -458,6 +465,8 @@ export async function saveItemBundle(payload: ItemBundlePayload) {
     await supabase.from("sub_items").delete().eq("id", subId).eq("user_id", user.id);
   }
 
+  const savedSubIds: string[] = [];
+
   // Sub-items + their links
   for (const [index, sub] of payload.subItems.entries()) {
     let subId = sub.id;
@@ -468,6 +477,7 @@ export async function saveItemBundle(payload: ItemBundlePayload) {
           title: sub.title,
           description: sub.description ?? null,
           priority: sub.priority,
+          kind: sub.kind ?? "step",
           is_completed: sub.isCompleted ?? false,
           sort_order: index,
         })
@@ -482,6 +492,7 @@ export async function saveItemBundle(payload: ItemBundlePayload) {
           title: sub.title,
           description: sub.description ?? null,
           priority: sub.priority,
+          kind: sub.kind ?? "step",
           is_completed: sub.isCompleted ?? false,
           sort_order: index,
         })
@@ -490,6 +501,7 @@ export async function saveItemBundle(payload: ItemBundlePayload) {
       if (error) throw error;
       subId = created.id;
     }
+    savedSubIds.push(subId!);
 
     for (const linkId of sub.deletedLinkIds ?? []) {
       await supabase.from("links").delete().eq("id", linkId).eq("user_id", user.id);
@@ -520,7 +532,7 @@ export async function saveItemBundle(payload: ItemBundlePayload) {
   }
 
   revalidatePath("/");
-  return { itemId };
+  return { itemId, subItemIds: savedSubIds };
 }
 
 export async function updateItem(
@@ -611,10 +623,13 @@ export async function updateItem(
 
     await supabase.from("items").update(updates).eq("id", itemId);
 
-    if (tokens && (payload.startTime || payload.title || payload.recurrence !== undefined)) {
+    if (tokens && (payload.startTime || payload.title || payload.description !== undefined || payload.recurrence !== undefined)) {
+      const dateKey = formatDateKey(
+        new Date(payload.startTime ?? item.start_time ?? Date.now())
+      );
       const event = await upsertCalendarEvent(tokens.accessToken, tokens.refreshToken, {
         title: payload.title ?? item.title,
-        description: payload.description ?? item.description,
+        description: withZbkLink(payload.description ?? item.description, dateKey, itemId),
         startTime: payload.startTime ?? item.start_time!,
         endTime: payload.endTime ?? item.end_time!,
         recurrence: payload.recurrence,

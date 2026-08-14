@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { DayView } from "./DayView";
 import { MonthView } from "./MonthView";
 import { ThemeToggle } from "./ThemeToggle";
+import { SearchPanel } from "./SearchPanel";
+import { InstallHint } from "./InstallHint";
 import { signOut } from "@/lib/actions/items";
 import { cn } from "@/lib/utils";
 import { Calendar, LayoutGrid, LogOut, Menu, X } from "lucide-react";
@@ -12,12 +14,19 @@ interface AppShellProps {
   userName: string;
   userAvatar?: string | null;
   initialDate: string;
+  initialItemId?: string | null;
 }
 
-export function AppShell({ userName, userAvatar, initialDate }: AppShellProps) {
+export function AppShell({
+  userName,
+  userAvatar,
+  initialDate,
+  initialItemId = null,
+}: AppShellProps) {
   const [view, setView] = useState<"day" | "month">("day");
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(initialDate);
+  const [focusItemId, setFocusItemId] = useState<string | null>(initialItemId);
   const [monthAnchor, setMonthAnchor] = useState(() => {
     const d = new Date(initialDate + "T12:00:00");
     return { year: d.getFullYear(), month: d.getMonth() + 1 };
@@ -90,6 +99,15 @@ export function AppShell({ userName, userAvatar, initialDate }: AppShellProps) {
         </div>
 
         <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
+          <SearchPanel
+            onPick={(hit) => {
+              setSelectedDate(hit.dateKey);
+              setFocusItemId(hit.itemId);
+              setView("day");
+              setMenuOpen(false);
+            }}
+          />
+
           <div>
             <p className="mb-2 px-2 text-xs font-medium uppercase tracking-wide text-[var(--optional)]">
               View
@@ -168,7 +186,12 @@ export function AppShell({ userName, userAvatar, initialDate }: AppShellProps) {
 
       <main className="mx-auto max-w-6xl px-4 py-6">
         {view === "day" ? (
-          <DayView dateKey={selectedDate} onDateChange={setSelectedDate} />
+          <DayView
+            dateKey={selectedDate}
+            onDateChange={setSelectedDate}
+            focusItemId={focusItemId}
+            onFocusConsumed={() => setFocusItemId(null)}
+          />
         ) : (
           <MonthView
             year={monthAnchor.year}
@@ -182,6 +205,7 @@ export function AppShell({ userName, userAvatar, initialDate }: AppShellProps) {
           />
         )}
       </main>
+      <InstallHint />
     </div>
   );
 }

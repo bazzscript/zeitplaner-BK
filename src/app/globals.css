@@ -63,6 +63,10 @@ button {
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
+.field-input.with-leading-icon {
+  padding-left: 2.25rem;
+}
+
 .field-input:focus {
   border-color: color-mix(in srgb, var(--accent) 70%, transparent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);

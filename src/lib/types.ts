@@ -1,4 +1,5 @@
 export type Priority = "important" | "optional";
+export type SubItemKind = "step" | "note";
 
 export interface Profile {
   id: string;
@@ -36,6 +37,7 @@ export interface SubItem {
   title: string;
   description: string | null;
   priority: Priority;
+  kind: SubItemKind;
   is_completed: boolean;
   sort_order: number;
   links?: Link[];
@@ -109,10 +111,43 @@ export interface DisplaySubItem {
   title: string;
   description: string | null;
   priority: Priority;
+  kind: SubItemKind;
   isCompleted: boolean;
   links: Link[];
   images: ImageRecord[];
   hasInstanceOverride: boolean;
+}
+
+export interface ActivityTemplate {
+  id: string;
+  name: string;
+  title: string;
+  description: string | null;
+  priority: Priority;
+  body: {
+    links?: { url: string; label?: string | null }[];
+    subItems?: {
+      title: string;
+      description?: string | null;
+      priority: Priority;
+      kind: SubItemKind;
+      links?: { url: string; label?: string | null }[];
+    }[];
+  };
+}
+
+export interface SearchHit {
+  itemId: string;
+  subItemId?: string;
+  dateKey: string;
+  title: string;
+  parentTitle?: string;
+}
+
+export interface CarryOverRow {
+  dateKey: string;
+  item: DayItem;
+  sub: DisplaySubItem;
 }
 
 export type RecurrenceEditScope = "this" | "all";
