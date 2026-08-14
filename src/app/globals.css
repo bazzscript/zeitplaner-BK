@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+:root,
+html.dark,
+html[data-theme="dark"] {
+  --background: #0f1419;
+  --foreground: #e7e9ea;
+  --card: #1a1f26;
+  --card-hover: #222830;
+  --border: #2f3542;
+  --muted: #8b9199;
+  --important: #f4212e;
+  --optional: #8b9199;
+  --accent: #1d9bf0;
+  --accent-hover: #1a8cd8;
+}
+
+html.light,
+html[data-theme="light"] {
+  --background: #f4f6f8;
+  --foreground: #111827;
+  --card: #ffffff;
+  --card-hover: #f0f3f6;
+  --border: #e3e7ed;
+  --muted: #6b7280;
+  --important: #dc2626;
+  --optional: #6b7280;
+  --accent: #1a8cd8;
+  --accent-hover: #1570b3;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), "Plus Jakarta Sans", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.field-input {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--background);
+  padding: 0.625rem 0.75rem;
+  color: var(--foreground);
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.field-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.field-input::placeholder {
+  color: color-mix(in srgb, var(--optional) 80%, transparent);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 280ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-pulse {
+    animation: none !important;
+  }
+}
